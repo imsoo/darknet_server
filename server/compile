@@ -1,0 +1,1 @@
+g++ -o server server.cpp -lzmq -lstdc++ -lpthread -lrt -std=c++11
