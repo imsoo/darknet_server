@@ -7,7 +7,7 @@
 ![vsw](https://user-images.githubusercontent.com/11255376/68307983-6fbc0c00-00ef-11ea-98ea-f0eba888b12d.gif)
 
 ## Client
-![cs](/image/cs.gif)
+![cs_low](https://user-images.githubusercontent.com/11255376/68310206-f45c5980-00f2-11ea-9375-c5315dfcba36.gif)
 
 ## References
 * https://github.com/AlexeyAB/darknet
