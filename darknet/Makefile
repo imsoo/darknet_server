@@ -1,12 +1,13 @@
-GPU=1
-CUDNN=1
-CUDNN_HALF=1
-OPENCV=1
+GPU=0
+CUDNN=0
+CUDNN_HALF=0
+OPENCV=0
 AVX=0
-OPENMP=1
+OPENMP=0
 LIBSO=0
 ZED_CAMERA=0
- #set GPU=1 and CUDNN=1 to speedup on GPU
+
+# set GPU=1 and CUDNN=1 to speedup on GPU
 # set CUDNN_HALF=1 to further speedup 3 x times (Mixed-precision on Tensor Cores) GPU: Volta, Xavier, Turing and higher
 # set AVX=1 and OPENMP=1 to speedup on CPU (if error occurs then set AVX=0)
 
@@ -19,7 +20,6 @@ ARCH= -gencode arch=compute_30,code=sm_30 \
 	  -gencode arch=compute_61,code=[sm_61,compute_61]
 
 OS := $(shell uname)
-ARCH= -gencode arch=compute_37,code=[sm_37,compute_37]
 
 # Tesla V100
 # ARCH= -gencode arch=compute_70,code=[sm_70,compute_70]
@@ -56,7 +56,7 @@ CC=gcc
 CPP=g++
 NVCC=nvcc
 OPTS=-Ofast
-LDFLAGS= -lm -pthread -lrt
+LDFLAGS= -lm -pthread
 COMMON= -Iinclude/ -I3rdparty/stb/include
 CFLAGS=-Wall -Wfatal-errors -Wno-unused-result -Wno-unknown-pragmas -fPIC
 

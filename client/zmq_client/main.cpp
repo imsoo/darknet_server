@@ -9,10 +9,8 @@
 #include <concurrent_priority_queue.h>
 #include "share_queue.h"
 
-
 using namespace cv;
 using namespace std;
-
 
 // thread
 void fetch_thread(void);
@@ -25,8 +23,8 @@ volatile bool fetch_flag = false;
 
 // ZMQ
 void *context;
-void *sock_push_server;
-void *sock_pull_server;
+void *sock_push;
+void *sock_sub;
 
 // pair
 class ComparePair
@@ -62,15 +60,16 @@ int main()
 	// ZMQ
 	context = zmq_ctx_new();
 
-	sock_push_server = zmq_socket(context, ZMQ_PUSH);
-	zmq_connect(sock_push_server, "tcp://104.199.144.166:5575");
+	sock_push = zmq_socket(context, ZMQ_PUSH);
+	zmq_connect(sock_push, "tcp://104.199.171.37:5575");
 
-	sock_pull_server = zmq_socket(context, ZMQ_PULL);
-	zmq_connect(sock_pull_server, "tcp://104.199.144.166:5570");
+	sock_sub = zmq_socket(context, ZMQ_SUB);
+	zmq_connect(sock_sub, "tcp://104.199.171.37:5570");
+	zmq_setsockopt(sock_sub, ZMQ_SUBSCRIBE, "", 0);
 
 
 	//비디오 캡쳐 초기화
-	//cap = VideoCapture("C:\\Users\\COMSE\\source\\repos\\zmq_test\\x64\\Release\\road.mp4");
+	cap = VideoCapture("C:\\Users\\COMSE\\source\\repos\\zmq_test\\x64\\Release\\test.mp4");
 
 	cap = VideoCapture(0);
 
@@ -82,7 +81,7 @@ int main()
 	double fps = cap.get(CAP_PROP_FPS);
 	delay = (1000.0 / fps) / 2.0;
 
-	
+
 	// 동영상 프레임 읽어오기
 	cap.read(mat_fetch);
 
@@ -93,7 +92,7 @@ int main()
 
 	mat_show_output = mat_fetch.clone();
 	mat_show_input = mat_fetch.clone();
-	
+
 	// thread 설정
 	thread thread_fetch(fetch_thread);
 	thread_fetch.detach();
@@ -112,33 +111,34 @@ int main()
 
 	while (!exit_flag)
 	{
-		cout << recv_queue.size() << " " << delay <<  endl;
+		//cout << recv_queue.size() << " " << delay << endl;
 	}
 
 	cap.release();
 
-	zmq_close(sock_pull_server);
-	zmq_close(sock_push_server);
+	zmq_close(sock_sub);
+	zmq_close(sock_push);
 	zmq_ctx_destroy(context);
 
 	return 0;
 }
 
 #define BUF_LEN 256000
-#define FETCH_THRESH 0
+#define FETCH_THRESH 1
 void fetch_thread(void) {
 	while (!exit_flag) {
+
 		// 동영상 프레임 읽어오기
 		if (cap.grab()) {
 			cap.retrieve(mat_fetch);
 
 			// fetch 큐에 삽입
-			fetch_queue.push_back(mat_fetch.clone());
+			fetch_queue.push_back(mat_fetch);
 
 			if (fetch_queue.size() > FETCH_THRESH)
 				fetch_flag = true;
 		}
-		// 
+		// 다읽은 경우
 		else {
 			fetch_flag = true;
 			return;
@@ -147,17 +147,18 @@ void fetch_thread(void) {
 }
 
 void capture_thread(void) {
-	static vector<int> param = { IMWRITE_JPEG_QUALITY, 75 };
+	static vector<int> param = { IMWRITE_JPEG_QUALITY, 30 };
 	static vector<uchar> encode_buf(BUF_LEN);
 	int frame_seq_num = 1;
 	string frame_seq;
 
 	while (!exit_flag) {
 		// 동영상 프레임 읽어오기
-		mat_cap = fetch_queue.front();
+		mat_cap = fetch_queue.front().clone();
 		fetch_queue.pop_front();
 
 		if (mat_cap.empty()) {
+			exit_flag = true;
 			cerr << "빈 영상이 캡쳐되었습니다.\n";
 			return;
 		}
@@ -166,15 +167,15 @@ void capture_thread(void) {
 		resize(mat_cap, mat_cap, Size(cap_width, cap_height));
 
 		// 캡처 큐에 삽입
-		cap_queue.push_back(mat_cap.clone());
+		cap_queue.push_back(mat_cap);
 
 		// jpg 인코딩
 		imencode(".jpg", mat_cap, encode_buf, param);
 
 		// 서버로 전송
 		frame_seq = to_string(frame_seq_num);
-		zmq_send(sock_push_server, frame_seq.c_str(), frame_seq.length(), ZMQ_SNDMORE);
-		zmq_send(sock_push_server, &encode_buf[0], encode_buf.size(), 0);
+		zmq_send(sock_push, frame_seq.c_str(), frame_seq.length(), ZMQ_SNDMORE);
+		zmq_send(sock_push, &encode_buf[0], encode_buf.size(), 0);
 		frame_seq_num++;
 	}
 }
@@ -183,17 +184,17 @@ void capture_thread(void) {
 void recv_thread(void) {
 	static vector<uchar> decode_buf(BUF_LEN);
 	unsigned char seq_buf[MAX_SEQ_NUM] = { 0 };
+	string src_address;
 	int recv_seq_len;
 	int recv_msg_len;
 	int frame_seq_num = 1;
 
 	while (!exit_flag) {
-
-		recv_seq_len = zmq_recv(sock_pull_server, seq_buf, MAX_SEQ_NUM, ZMQ_NOBLOCK);
+		recv_seq_len = zmq_recv(sock_sub, seq_buf, MAX_SEQ_NUM, ZMQ_NOBLOCK);
 
 		if (recv_seq_len > 0) {
 			frame_seq_num = atoi((const char *)seq_buf);
-			recv_msg_len = zmq_recv(sock_pull_server, &decode_buf[0], BUF_LEN, ZMQ_NOBLOCK);
+			recv_msg_len = zmq_recv(sock_sub, &decode_buf[0], BUF_LEN, ZMQ_NOBLOCK);
 			// 디코딩
 			mat_recv = imdecode(decode_buf, IMREAD_COLOR);
 
@@ -215,13 +216,15 @@ void recv_thread(void) {
 #define DONT_SHOW 0
 #define DONT_SHOW_THRESH 1
 #define SHOW_START 1
-#define SHOW_START_THRESH 2
+#define SHOW_START_THRESH 3
 
 int volatile show_state = DONT_SHOW;
-int volatile show_frame = 1;
+long volatile show_frame = 1;
+long volatile show_fail_count = 0;
+#define SHOW_FAIL_THRESH 3
 void input_show_thread(void) {
 	cvNamedWindow("INPUT");
-	moveWindow("INPUT", 0, 0);
+	moveWindow("INPUT", 30, 130);
 	cv::imshow("INPUT", mat_show_input);
 	setMouseCallback("INPUT", onMouse, 0);
 
@@ -232,7 +235,7 @@ void input_show_thread(void) {
 			break;
 		case SHOW_START:
 			if (cap_queue.size() >= DONT_SHOW_THRESH) {
-				mat_show_input = cap_queue.front();
+				mat_show_input = cap_queue.front().clone();
 				cap_queue.pop_front();
 			}
 			break;
@@ -256,7 +259,7 @@ void input_show_thread(void) {
 
 void output_show_thread(void) {
 	cvNamedWindow("OUTPUT");
-	moveWindow("OUTPUT", 730, 0);
+	moveWindow("OUTPUT", 670, 130);
 	cv::imshow("OUTPUT", mat_show_output);
 	setMouseCallback("OUTPUT", onMouse, 0);
 
@@ -270,20 +273,39 @@ void output_show_thread(void) {
 			break;
 		case SHOW_START:
 			if (recv_queue.size() >= DONT_SHOW_THRESH) {
-
 				pair<long, void *> p;
 				// pop 성공
 				if (recv_queue.try_pop(p)) {
 					// 순서에 맞는 프레임인 경우 꺼내서 출력
 					if (p.first == show_frame) {
-						mat_show_output = ((Mat *)p.second)->clone();
-						delete p.second;
+						show_fail_count = 0;
+						std::cout << "정상 프레임 " << show_frame << std::endl;
 						show_frame++;
+						mat_show_output = ((Mat *)p.second)->clone();
+						delete (Mat *)p.second;
 					}
-					// 아닌 경우 다시 삽입
+					// 아닌 경우
 					else {
-						show_state = DONT_SHOW;
-						recv_queue.push(p);
+						// 늦게 도착한 경우 버림
+						if (p.first < show_frame) {
+							std::cout << "늦은 프레임 버림" << p.first << " wait : " << show_frame << std::endl;
+							show_fail_count = 0;
+							delete (Mat *)p.second;
+						}
+						// 먼저 도착한 경우 대기
+						else {
+							std::cout << "잘못된 프레임 : " << p.first << " wait : " << show_frame << std::endl;
+							if (show_fail_count > SHOW_FAIL_THRESH) {
+								show_fail_count = 0;
+								show_frame = p.first + 1;	//skip
+								mat_show_output = ((Mat *)p.second)->clone();
+								delete (Mat *)p.second;
+							}
+							else {
+								show_fail_count++;
+								recv_queue.push(p);
+							}
+						}
 					}
 				}
 			}

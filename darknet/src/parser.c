@@ -168,6 +168,9 @@ convolutional_layer parse_convolutional(list *options, size_params params, netwo
         if (stride_x < 1) stride_x = stride;
         if (stride_y < 1) stride_y = stride;
     }
+    else {
+        stride = option_find_int_quiet(options, "stride", 1);
+    }
     int dilation = option_find_int_quiet(options, "dilation", 1);
     int antialiasing = option_find_int_quiet(options, "antialiasing", 0);
     if (size == 1) dilation = 1;
@@ -948,6 +951,8 @@ network parse_network_cfg_custom(char *filename, int batch, int time_steps)
     params.inputs = net.inputs;
     if (batch > 0) net.batch = batch;
     if (time_steps > 0) net.time_steps = time_steps;
+    if (net.batch < 1) net.batch = 1;
+    if (net.time_steps < 1) net.time_steps = 1;
     if (net.batch < net.time_steps) net.batch = net.time_steps;
     params.batch = net.batch;
     params.time_steps = net.time_steps;

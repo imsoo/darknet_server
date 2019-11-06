@@ -1423,7 +1423,6 @@ void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filenam
 
 void run_detector(int argc, char **argv)
 {
-    int use_shm = find_arg(argc, argv, "-use_shm"); // imsoo add
     int dont_show = find_arg(argc, argv, "-dont_show");
     int show = find_arg(argc, argv, "-show");
     int letter_box = find_arg(argc, argv, "-letter_box");
@@ -1499,16 +1498,8 @@ void run_detector(int argc, char **argv)
         if (filename)
             if (strlen(filename) > 0)
                 if (filename[strlen(filename) - 1] == 0x0d) filename[strlen(filename) - 1] = 0;
-        
-        // imsoo add
-        if (use_shm) {
-          demo_shm(cfg, weights, thresh, hier_thresh, cam_index, filename, names, classes, frame_skip, prefix, out_filename,
+        demo(cfg, weights, thresh, hier_thresh, cam_index, filename, names, classes, frame_skip, prefix, out_filename,
             mjpeg_port, json_port, dont_show, ext_output, letter_box);
-        }
-        else {
-          demo(cfg, weights, thresh, hier_thresh, cam_index, filename, names, classes, frame_skip, prefix, out_filename,
-            mjpeg_port, json_port, dont_show, ext_output, letter_box);
-        }
 
         free_list_contents_kvp(options);
         free_list(options);

@@ -1,5 +1,5 @@
 #include "image_opencv.h"
-#include "shmringbuffer.hh"
+
 #ifdef OPENCV
 #include "utils.h"
 
@@ -92,17 +92,7 @@ extern "C" {
 //    cv::Mat ipl_to_mat(IplImage *ipl);
 //    IplImage *mat_to_ipl(cv::Mat mat);
 
-#define MAX_FRAME_LEN 256000
-struct FrameNode {
-  unsigned int len;
-  unsigned char frame[MAX_FRAME_LEN];
-};
-#define SHM_CAPACITY 1000
-static FrameNode f_n;
-static ShmRingBuffer<FrameNode> recv_buffer(SHM_CAPACITY, false);
-static ShmRingBuffer<FrameNode> send_buffer(SHM_CAPACITY, false, "/send_buffer");
 
-static std::vector<int> param = {cv::IMWRITE_JPEG_QUALITY, 80};
 mat_cv *load_image_mat_cv(const char *filename, int flag)
 {
     try {
@@ -607,20 +597,6 @@ void release_capture(cap_cv* cap)
 }
 // ----------------------------------------
 
-mat_cv* get_capture_frame_shm(void) {
-    cv::Mat *mat = nullptr;
-
-    if(recv_buffer.begin() == recv_buffer.end()) {
-      mat = new cv::Mat(1, 1, CV_8UC3, cv::Scalar(10, 100, 150));
-    }
-    else {
-      f_n = recv_buffer.dump_front();
-      std::vector<unsigned char> raw_frame(f_n.frame, f_n.frame + f_n.len);
-      mat = new cv::Mat(cv::imdecode(cv::Mat(raw_frame), 1));
-    }
-    return (mat_cv *)mat;
-}
-
 mat_cv* get_capture_frame_cv(cap_cv *cap) {
     cv::Mat *mat = new cv::Mat();
     try {
@@ -769,27 +745,23 @@ int wait_for_stream(cap_cv *cap, cv::Mat* src, int dont_close)
 }
 // ----------------------------------------
 
-image get_image_from_stream_resize(cap_cv *cap, int w, int h, int c, mat_cv** in_img, int dont_close, int use_shm)
+image get_image_from_stream_resize(cap_cv *cap, int w, int h, int c, mat_cv** in_img, int dont_close)
 {
     c = c ? c : 3;
     cv::Mat *src = NULL;
 
     static int once = 1;
-    if (use_shm) {
-      src = get_capture_frame_shm();
+    if (once) {
+        once = 0;
+        do {
+            src = get_capture_frame_cv(cap);
+            if (!src) return make_empty_image(0, 0, 0);
+        } while (src->cols < 1 || src->rows < 1 || src->channels() < 1);
+        printf("Video stream: %d x %d \n", src->cols, src->rows);
     }
-    else {
-      if (once) {
-          once = 0;
-          do {
-              src = get_capture_frame_cv(cap);
-              if (!src) return make_empty_image(0, 0, 0);
-          } while (src->cols < 1 || src->rows < 1 || src->channels() < 1);
-          printf("Video stream: %d x %d \n", src->cols, src->rows);
-      }
-      else
-          src = get_capture_frame_cv(cap);
-    }
+    else
+        src = get_capture_frame_cv(cap);
+
     if (!wait_for_stream(cap, src, dont_close)) return make_empty_image(0, 0, 0);
 
     *(cv::Mat **)in_img = src;
@@ -1002,23 +974,11 @@ void draw_detections_cv_v3(mat_cv* mat, detection *dets, int num, float thresh, 
                 cv::rectangle(*show_img, pt_text_bg1, pt_text_bg2, color, CV_FILLED, 8, 0);    // filled
                 cv::Scalar black_color = CV_RGB(0, 0, 0);
                 cv::putText(*show_img, labelstr, pt_text, cv::FONT_HERSHEY_COMPLEX_SMALL, font_size, black_color, 2 * font_size, CV_AA);
-
                 // cv::FONT_HERSHEY_COMPLEX_SMALL, cv::FONT_HERSHEY_SIMPLEX
             }
         }
         if (ext_output) {
             fflush(stdout);
-        }
-        
-        std::vector<unsigned char> res_frame;
-        
-        if(show_img->rows * show_img->cols != 1) {
-          printf("PROCESSED\n");
-          cv::imencode(".jpg", *show_img, res_frame, param);
-          std::copy(res_frame.begin(), res_frame.end(), f_n.frame);
-
-          f_n.len = res_frame.size();
-          send_buffer.push_back(f_n);
         }
     }
     catch (...) {
