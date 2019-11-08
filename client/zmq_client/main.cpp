@@ -12,6 +12,18 @@
 using namespace cv;
 using namespace std;
 
+// utility
+inline int str_to_int(const char* str, int len)
+{
+	int i;
+	int ret = 0;
+	for (i = 0; i < len; ++i)
+	{
+		ret = ret * 10 + (str[i] - '0');
+	}
+	return ret;
+}
+
 // thread
 void fetch_thread(void);
 void capture_thread(void);
@@ -61,17 +73,17 @@ int main()
 	context = zmq_ctx_new();
 
 	sock_push = zmq_socket(context, ZMQ_PUSH);
-	zmq_connect(sock_push, "tcp://104.199.171.37:5575");
+	zmq_connect(sock_push, "tcp://104.199.254.10:5575");
 
 	sock_sub = zmq_socket(context, ZMQ_SUB);
-	zmq_connect(sock_sub, "tcp://104.199.171.37:5570");
+	zmq_connect(sock_sub, "tcp://104.199.254.10:5570");
 	zmq_setsockopt(sock_sub, ZMQ_SUBSCRIBE, "", 0);
 
 
 	//비디오 캡쳐 초기화
 	cap = VideoCapture("C:\\Users\\COMSE\\source\\repos\\zmq_test\\x64\\Release\\test.mp4");
 
-	cap = VideoCapture(0);
+	//cap = VideoCapture(0);
 
 	if (!cap.isOpened()) {
 		cerr << "Erro VideoCapture.\n";
@@ -79,7 +91,7 @@ int main()
 	}
 
 	double fps = cap.get(CAP_PROP_FPS);
-	delay = (1000.0 / fps) / 2.0;
+	delay = (1000.0 / fps) / 2;
 
 
 	// 동영상 프레임 읽어오기
@@ -124,30 +136,44 @@ int main()
 }
 
 #define BUF_LEN 256000
-#define FETCH_THRESH 1
+#define FETCH_THRESH 100
+#define FETCH_WAIT_THRESH 50
+#define FETCH_STATE 0
+#define FETCH_WAIT 1
 void fetch_thread(void) {
+	volatile int fetch_state = FETCH_STATE;
 	while (!exit_flag) {
 
-		// 동영상 프레임 읽어오기
-		if (cap.grab()) {
-			cap.retrieve(mat_fetch);
+		switch (fetch_state) {
+		case FETCH_STATE:
+			if (cap.grab()) {
 
-			// fetch 큐에 삽입
-			fetch_queue.push_back(mat_fetch);
+				cap.retrieve(mat_fetch);
 
-			if (fetch_queue.size() > FETCH_THRESH)
-				fetch_flag = true;
-		}
-		// 다읽은 경우
-		else {
+				// fetch 큐에 삽입
+				fetch_queue.push_back(mat_fetch.clone());
+
+				if (fetch_queue.size() > FETCH_THRESH) {
+					fetch_state = FETCH_WAIT;
+				}
+			}
+			// 다 읽은 경우
+			else {
+				return;
+			}
+			break;
+		case FETCH_WAIT:
 			fetch_flag = true;
-			return;
+			if (fetch_queue.size() < FETCH_WAIT_THRESH) {
+				fetch_state = FETCH_STATE;
+			}
+			break;
 		}
 	}
 }
 
 void capture_thread(void) {
-	static vector<int> param = { IMWRITE_JPEG_QUALITY, 30 };
+	static vector<int> param = { IMWRITE_JPEG_QUALITY, 50 };
 	static vector<uchar> encode_buf(BUF_LEN);
 	int frame_seq_num = 1;
 	string frame_seq;
@@ -167,7 +193,7 @@ void capture_thread(void) {
 		resize(mat_cap, mat_cap, Size(cap_width, cap_height));
 
 		// 캡처 큐에 삽입
-		cap_queue.push_back(mat_cap);
+		cap_queue.push_back(mat_cap.clone());
 
 		// jpg 인코딩
 		imencode(".jpg", mat_cap, encode_buf, param);
@@ -193,7 +219,8 @@ void recv_thread(void) {
 		recv_seq_len = zmq_recv(sock_sub, seq_buf, MAX_SEQ_NUM, ZMQ_NOBLOCK);
 
 		if (recv_seq_len > 0) {
-			frame_seq_num = atoi((const char *)seq_buf);
+			//frame_seq_num = atoi((const char *)seq_buf);
+			frame_seq_num = str_to_int((const char *)seq_buf, recv_seq_len);
 			recv_msg_len = zmq_recv(sock_sub, &decode_buf[0], BUF_LEN, ZMQ_NOBLOCK);
 			// 디코딩
 			mat_recv = imdecode(decode_buf, IMREAD_COLOR);
@@ -216,12 +243,12 @@ void recv_thread(void) {
 #define DONT_SHOW 0
 #define DONT_SHOW_THRESH 1
 #define SHOW_START 1
-#define SHOW_START_THRESH 3
+#define SHOW_START_THRESH 30
 
 int volatile show_state = DONT_SHOW;
 long volatile show_frame = 1;
 long volatile show_fail_count = 0;
-#define SHOW_FAIL_THRESH 3
+#define SHOW_FAIL_THRESH 5
 void input_show_thread(void) {
 	cvNamedWindow("INPUT");
 	moveWindow("INPUT", 30, 130);

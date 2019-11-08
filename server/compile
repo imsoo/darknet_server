@@ -1,1 +1,4 @@
-g++ -o server server.cpp -lzmq -lstdc++ -lpthread -lrt -std=c++11
+g++ -o worker worker.cpp -lzmq -lstdc++ -lpthread -lrt `pkg-config --libs opencv` -ldarknet -std=c++11 -D OPENCV
+g++ -o ventilator ventilator.cpp -lzmq -lstdc++ -lpthread -lrt -std=c++11
+g++ -o sink sink.cpp -lzmq -lstdc++ -lpthread -lrt -std=c++11
+
