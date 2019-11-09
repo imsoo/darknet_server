@@ -73,15 +73,15 @@ int main()
 	context = zmq_ctx_new();
 
 	sock_push = zmq_socket(context, ZMQ_PUSH);
-	zmq_connect(sock_push, "tcp://104.199.254.10:5575");
+	zmq_connect(sock_push, "tcp://104.199.171.37:5575");
 
 	sock_sub = zmq_socket(context, ZMQ_SUB);
-	zmq_connect(sock_sub, "tcp://104.199.254.10:5570");
+	zmq_connect(sock_sub, "tcp://104.199.171.37:5570");
 	zmq_setsockopt(sock_sub, ZMQ_SUBSCRIBE, "", 0);
 
 
 	//비디오 캡쳐 초기화
-	cap = VideoCapture("C:\\Users\\COMSE\\source\\repos\\zmq_test\\x64\\Release\\test.mp4");
+	cap = VideoCapture("C:\\Users\\COMSE\\source\\repos\\zmq_test\\x64\\Release\\road.mp4");
 
 	//cap = VideoCapture(0);
 
@@ -123,7 +123,7 @@ int main()
 
 	while (!exit_flag)
 	{
-		//cout << recv_queue.size() << " " << delay << endl;
+		//cout << recv_queue.size() << " " << cap_queue.size() << " "  << fetch_queue.size()  << endl;
 	}
 
 	cap.release();
@@ -137,7 +137,7 @@ int main()
 
 #define BUF_LEN 256000
 #define FETCH_THRESH 100
-#define FETCH_WAIT_THRESH 50
+#define FETCH_WAIT_THRESH 30
 #define FETCH_STATE 0
 #define FETCH_WAIT 1
 void fetch_thread(void) {
@@ -243,7 +243,7 @@ void recv_thread(void) {
 #define DONT_SHOW 0
 #define DONT_SHOW_THRESH 1
 #define SHOW_START 1
-#define SHOW_START_THRESH 30
+#define SHOW_START_THRESH 3
 
 int volatile show_state = DONT_SHOW;
 long volatile show_frame = 1;
@@ -306,7 +306,7 @@ void output_show_thread(void) {
 					// 순서에 맞는 프레임인 경우 꺼내서 출력
 					if (p.first == show_frame) {
 						show_fail_count = 0;
-						std::cout << "정상 프레임 " << show_frame << std::endl;
+						//std::cout << "정상 프레임 " << show_frame << std::endl;
 						show_frame++;
 						mat_show_output = ((Mat *)p.second)->clone();
 						delete (Mat *)p.second;

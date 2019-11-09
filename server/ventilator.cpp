@@ -39,8 +39,8 @@ void *recv_in_thread(void *ptr)
     if (recv_seq_len > 0) {
       recv_msg_len = zmq_recv(sock_pull, recv_buf_ptr, MAX_BUF_LEN, ZMQ_NOBLOCK);
       if (recv_msg_len > 0) {
-        std::cout << "Ventilator | Recv From Client | SEQ : " << seq_buf_ptr 
-          << " LEN : " << recv_msg_len << std::endl;
+        //std::cout << "Ventilator | Recv From Client | SEQ : " << seq_buf_ptr 
+        //  << " LEN : " << recv_msg_len << std::endl;
 
         frame.seq_len = recv_seq_len;
         frame.msg_len = recv_msg_len;
@@ -75,8 +75,8 @@ void *send_in_thread(void *ptr)
 
       zmq_send(sock_push, seq_buf_ptr, send_seq_len, ZMQ_SNDMORE);
       zmq_send(sock_push, send_buf_ptr, send_msg_len, 0);
-      std::cout << "Ventilator | Send To Worker | SEQ : " << seq_buf_ptr 
-        << " LEN : " << send_msg_len << std::endl;
+      //std::cout << "Ventilator | Send To Worker | SEQ : " << seq_buf_ptr 
+      //  << " LEN : " << send_msg_len << std::endl;
 
       mem_pool_seq->Free((void *)seq_buf_ptr);
       mem_pool_msg->Free((void *)send_buf_ptr);
