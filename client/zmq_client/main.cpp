@@ -1,28 +1,20 @@
-#define FD_SETSIZE 4096;
 #include <zmq.h>
 #include <iostream>
-#include <opencv2/opencv.hpp>
 #include <thread>
 #include <queue>
 #include <chrono>
 #include <thread>
+#include <string>
+#include <sstream>
 #include <concurrent_priority_queue.h>
-#include "share_queue.h"
+#include <opencv2/opencv.hpp>
+#include "share_queue.hpp"
+#include "frame.hpp"
+#include "util.hpp"
+#include "args.hpp"
 
 using namespace cv;
 using namespace std;
-
-// utility
-inline int str_to_int(const char* str, int len)
-{
-	int i;
-	int ret = 0;
-	for (i = 0; i < len; ++i)
-	{
-		ret = ret * 10 + (str[i] - '0');
-	}
-	return ret;
-}
 
 // thread
 void fetch_thread(void);
@@ -30,8 +22,10 @@ void capture_thread(void);
 void recv_thread(void);
 void output_show_thread(void);
 void input_show_thread(void);
-volatile bool exit_flag = false;
+
 volatile bool fetch_flag = false;
+volatile bool exit_flag = false;
+volatile int final_exit_flag = 0;
 
 // ZMQ
 void *context;
@@ -42,21 +36,20 @@ void *sock_sub;
 class ComparePair
 {
 public:
-	bool operator()(pair<long, void *> n1, pair<long, void *> n2) {
-		return n1.first > n2.first;
-	}
+  bool operator()(pair<long, Frame> n1, pair<long, Frame> n2) {
+    return n1.first > n2.first;
+  }
 };
+Frame_pool *frame_pool;
+concurrency::concurrent_priority_queue<pair<long, Frame>, ComparePair> recv_queue;
 
 // Queue
-//SharedQueue<Mat> recv_queue;
 SharedQueue<Mat> cap_queue;
 SharedQueue<Mat> fetch_queue;
-concurrency::concurrent_priority_queue<pair<long, void*>, ComparePair> recv_queue;
-
 
 // opencv
-static void onMouse(int event, int x, int y, int, void*);
 VideoCapture cap;
+VideoWriter writer;
 static Mat mat_show_output;
 static Mat mat_show_input;
 static Mat mat_recv;
@@ -66,304 +59,404 @@ static Mat mat_fetch;
 const int cap_width = 640;
 const int cap_height = 480;
 double delay;
+long volatile show_frame = 1;
+double end_frame;
 
-int main()
+// option
+bool cam_input_flag;
+bool vid_input_flag;
+bool dont_show_flag;
+bool json_output_flag;
+bool vid_output_flag;
+
+// output
+string out_json_path;
+string out_vid_path;
+
+ofstream out_json_file;
+
+int main(int argc, char *argv[])
 {
-	// ZMQ
-	context = zmq_ctx_new();
+  if (argc < 2) {
+    std::cerr << "Usage: " << argv[0] << " <-addr ADDR> <-cam CAM_NUM | -vid VIDEO_PATH> [-dont_show] [-out_json] [-out_vid] \n" << std::endl;
+    return 0;
+  }
 
-	sock_push = zmq_socket(context, ZMQ_PUSH);
-	zmq_connect(sock_push, "tcp://104.199.171.37:5575");
+  // option init
+  int cam_num = find_int_arg(argc, argv, "-cam", -1);
+  if (cam_num != -1)
+    cam_input_flag = true;
 
-	sock_sub = zmq_socket(context, ZMQ_SUB);
-	zmq_connect(sock_sub, "tcp://104.199.171.37:5570");
-	zmq_setsockopt(sock_sub, ZMQ_SUBSCRIBE, "", 0);
+  const char *vid_def_path = "./test.mp4";
+  const char *vid_path = find_char_arg(argc, argv, "-vid", vid_def_path);
+  if (vid_path != vid_def_path)
+    vid_input_flag = true;
 
+  dont_show_flag = find_arg(argc, argv, "-dont_show");
+  json_output_flag = find_arg(argc, argv, "-out_json");
+  vid_output_flag = find_arg(argc, argv, "-out_vid");
 
-	//비디오 캡쳐 초기화
-	cap = VideoCapture("C:\\Users\\COMSE\\source\\repos\\zmq_test\\x64\\Release\\road.mp4");
+  // frame_pool init
+  frame_pool = new Frame_pool(5000);
 
-	//cap = VideoCapture(0);
+  // ZMQ
+  const char *addr = find_char_arg(argc, argv, "-addr", "127.0.0.1");
+  context = zmq_ctx_new();
 
-	if (!cap.isOpened()) {
-		cerr << "Erro VideoCapture.\n";
-		return -1;
-	}
+  sock_push = zmq_socket(context, ZMQ_PUSH);
+  zmq_connect(sock_push, ((std::string("tcp://") + addr) + ":5575").c_str());
 
-	double fps = cap.get(CAP_PROP_FPS);
-	delay = (1000.0 / fps) / 2;
+  sock_sub = zmq_socket(context, ZMQ_SUB);
+  zmq_connect(sock_sub, ((std::string("tcp://") + addr) + ":5570").c_str());
 
+  zmq_setsockopt(sock_sub, ZMQ_SUBSCRIBE, "", 0);
 
-	// 동영상 프레임 읽어오기
-	cap.read(mat_fetch);
+  if (vid_input_flag) {
+    // VideoCaputre video
+    cap = VideoCapture(vid_path);
+    out_json_path = string(vid_path, strrchr(vid_path, '.')) + "_output.json";
+    out_vid_path = string(vid_path, strrchr(vid_path, '.')) + "_output.mp4";
+  }
+  else if (cam_input_flag) {
+    // VideoCapture cam
+    cap = VideoCapture(cam_num);
+    cap.set(CV_CAP_PROP_FPS, 15);
+    fetch_flag = true;
+    out_json_path = "./cam_output.json";
+    out_vid_path = "./cam_output.mp4";
+  }
+  else {
+    // error
+    std::cerr << "Usage: " << argv[0] << " <-addr ADDR> <-cam CAM_NUM | -vid VIDEO_PATH> [-dont_show] [-out_json] [-out_vid] \n" << std::endl;
+    return 0;
+  }
 
-	if (mat_fetch.empty()) {
-		cerr << "빈 영상이 캡쳐되었습니다.\n";
-		return 0;
-	}
+  if (!cap.isOpened()) {
+    cerr << "Erro VideoCapture...\n";
+    return -1;
+  }
 
-	mat_show_output = mat_fetch.clone();
-	mat_show_input = mat_fetch.clone();
+  double fps = cap.get(CAP_PROP_FPS);
+  end_frame = cap.get(CAP_PROP_FRAME_COUNT);
+  delay = (1000.0 / fps) / 4.0;
 
-	// thread 설정
-	thread thread_fetch(fetch_thread);
-	thread_fetch.detach();
+  // read frame
+  cap.read(mat_fetch);
 
-	while (!fetch_flag);
+  if (mat_fetch.empty()) {
+    cerr << "Empty Mat Captured...\n";
+    return 0;
+  }
 
-	thread thread_show_input(output_show_thread);
-	thread thread_show_output(input_show_thread);
-	thread thread_recv(recv_thread);
-	thread thread_capture(capture_thread);
+  mat_show_output = mat_fetch.clone();
+  mat_show_input = mat_fetch.clone();
 
-	thread_show_input.detach();
-	thread_show_output.detach();
-	thread_recv.detach();
-	thread_capture.detach();
+  // output init
+  if (json_output_flag) {
+    out_json_file = ofstream(out_json_path);
+    if (!out_json_file.is_open()) {
+      cerr << "output file : " << out_json_path << " open error \n";
+      return 0;
+    }
+    out_json_file << "{\n \"det\": [\n";
+  }
 
-	while (!exit_flag)
-	{
-		//cout << recv_queue.size() << " " << cap_queue.size() << " "  << fetch_queue.size()  << endl;
-	}
+  if (vid_output_flag) {
+    writer.open(out_vid_path, VideoWriter::fourcc('M', 'P', '4', 'V'), fps, Size(cap_width, cap_height), true);
+    if (!writer.isOpened()) {
+      cerr << "Erro VideoWriter...\n";
+      return -1;
+    }
+  }
 
-	cap.release();
+  // thread init
+  thread thread_fetch(fetch_thread);
+  thread_fetch.detach();
 
-	zmq_close(sock_sub);
-	zmq_close(sock_push);
-	zmq_ctx_destroy(context);
+  while (!fetch_flag);
 
-	return 0;
+  thread thread_show_input(output_show_thread);
+  thread thread_show_output(input_show_thread);
+  thread thread_recv(recv_thread);
+  thread thread_capture(capture_thread);
+
+  thread_show_input.detach();
+  thread_show_output.detach();
+  thread_recv.detach();
+  thread_capture.detach();
+
+  while (final_exit_flag)
+  {
+    // for debug
+    // cout << "R : " << recv_queue.size() << " | C : " << cap_queue.size() << " | F : " << fetch_queue.size() << " | T : " << end_frame << " : " << show_frame << endl;
+  }
+
+  cap.release();
+
+  if (json_output_flag) {
+    out_json_file << "\n ]\n}";
+    out_json_file.close();
+  }
+
+  if (vid_output_flag) {
+    writer.release();
+  }
+
+  delete frame_pool;
+  zmq_close(sock_sub);
+  zmq_close(sock_push);
+  zmq_ctx_destroy(context);
+
+  return 0;
 }
 
-#define BUF_LEN 256000
 #define FETCH_THRESH 100
 #define FETCH_WAIT_THRESH 30
 #define FETCH_STATE 0
 #define FETCH_WAIT 1
 void fetch_thread(void) {
-	volatile int fetch_state = FETCH_STATE;
-	while (!exit_flag) {
+  volatile int fetch_state = FETCH_STATE;
+  final_exit_flag += 1;
+  while (!exit_flag) {
 
-		switch (fetch_state) {
-		case FETCH_STATE:
-			if (cap.grab()) {
+    switch (fetch_state) {
+    case FETCH_STATE:
+      if (cap.grab()) {
 
-				cap.retrieve(mat_fetch);
+        cap.retrieve(mat_fetch);
 
-				// fetch 큐에 삽입
-				fetch_queue.push_back(mat_fetch.clone());
+        // push fetch queue
+        fetch_queue.push_back(mat_fetch.clone());
 
-				if (fetch_queue.size() > FETCH_THRESH) {
-					fetch_state = FETCH_WAIT;
-				}
-			}
-			// 다 읽은 경우
-			else {
-				return;
-			}
-			break;
-		case FETCH_WAIT:
-			fetch_flag = true;
-			if (fetch_queue.size() < FETCH_WAIT_THRESH) {
-				fetch_state = FETCH_STATE;
-			}
-			break;
-		}
-	}
+        // if cam dont wait
+        if (!cam_input_flag && (fetch_queue.size() > FETCH_THRESH)) {
+          fetch_state = FETCH_WAIT;
+        }
+      }
+      // if fetch end
+      else {
+        final_exit_flag -= 1;
+        return;
+      }
+      break;
+    case FETCH_WAIT:
+      fetch_flag = true;
+      if (fetch_queue.size() < FETCH_WAIT_THRESH) {
+        fetch_state = FETCH_STATE;
+      }
+      break;
+    }
+  }
+  final_exit_flag -= 1;
 }
 
 void capture_thread(void) {
-	static vector<int> param = { IMWRITE_JPEG_QUALITY, 50 };
-	static vector<uchar> encode_buf(BUF_LEN);
-	int frame_seq_num = 1;
-	string frame_seq;
+  static vector<int> param = { IMWRITE_JPEG_QUALITY, 80 };
+  static vector<uchar> encode_buf(JSON_BUF_LEN);
 
-	while (!exit_flag) {
-		// 동영상 프레임 읽어오기
-		mat_cap = fetch_queue.front().clone();
-		fetch_queue.pop_front();
+  volatile int frame_seq_num = 1;
+  string frame_seq;
 
-		if (mat_cap.empty()) {
-			exit_flag = true;
-			cerr << "빈 영상이 캡쳐되었습니다.\n";
-			return;
-		}
+  // for json
+  unsigned char json_buf[JSON_BUF_LEN];
+  int send_json_len;
 
-		// 동영상 프레임 크기 조정
-		resize(mat_cap, mat_cap, Size(cap_width, cap_height));
+  Frame frame = frame_pool->alloc_frame();
 
-		// 캡처 큐에 삽입
-		cap_queue.push_back(mat_cap.clone());
+  final_exit_flag += 1;
+  while (!exit_flag) {
+    if (fetch_queue.size() < 1)
+      continue;
 
-		// jpg 인코딩
-		imencode(".jpg", mat_cap, encode_buf, param);
+    // get input mat 
+    mat_cap = fetch_queue.front().clone();
+    fetch_queue.pop_front();
 
-		// 서버로 전송
-		frame_seq = to_string(frame_seq_num);
-		zmq_send(sock_push, frame_seq.c_str(), frame_seq.length(), ZMQ_SNDMORE);
-		zmq_send(sock_push, &encode_buf[0], encode_buf.size(), 0);
-		frame_seq_num++;
-	}
+    if (mat_cap.empty()) {
+      cerr << "Empty Mat Captured...\n";
+      continue;
+    }
+
+    // resize
+    resize(mat_cap, mat_cap, Size(cap_width, cap_height));
+
+    // push to cap queue (for display input)
+    cap_queue.push_back(mat_cap.clone());
+
+    // mat to jpg
+    imencode(".jpg", mat_cap, encode_buf, param);
+
+    // jpg to json (seq + msg)
+    frame_seq = to_string(frame_seq_num);
+    frame.seq_len = frame_seq.size();
+    memcpy(frame.seq_buf, frame_seq.c_str(), frame.seq_len);
+
+    frame.msg_len = encode_buf.size();
+    memcpy(frame.msg_buf, &encode_buf[0], frame.msg_len);
+
+    send_json_len = frame_to_json(json_buf, frame);
+
+    // send json to server
+    zmq_send(sock_push, json_buf, send_json_len, 0);
+
+    frame_seq_num++;
+  }
+  frame_pool->free_frame(frame);
+  final_exit_flag -= 1;
 }
 
-#define MAX_SEQ_NUM 20
 void recv_thread(void) {
-	static vector<uchar> decode_buf(BUF_LEN);
-	unsigned char seq_buf[MAX_SEQ_NUM] = { 0 };
-	string src_address;
-	int recv_seq_len;
-	int recv_msg_len;
-	int frame_seq_num = 1;
+  int recv_json_len;
+  int frame_seq_num = 1;
+  Frame frame;
+  unsigned char json_buf[JSON_BUF_LEN];
 
-	while (!exit_flag) {
-		recv_seq_len = zmq_recv(sock_sub, seq_buf, MAX_SEQ_NUM, ZMQ_NOBLOCK);
+  final_exit_flag += 1;
+  while (!exit_flag) {
+    recv_json_len = zmq_recv(sock_sub, json_buf, JSON_BUF_LEN, ZMQ_NOBLOCK);
 
-		if (recv_seq_len > 0) {
-			//frame_seq_num = atoi((const char *)seq_buf);
-			frame_seq_num = str_to_int((const char *)seq_buf, recv_seq_len);
-			recv_msg_len = zmq_recv(sock_sub, &decode_buf[0], BUF_LEN, ZMQ_NOBLOCK);
-			// 디코딩
-			mat_recv = imdecode(decode_buf, IMREAD_COLOR);
+    if (recv_json_len > 0) {
+      frame = frame_pool->alloc_frame();
+      json_buf[recv_json_len] = '\0';
+      json_to_frame(json_buf, frame);
 
-			// 정상 프레임 인 경우
-			if (mat_recv.rows > 0) {
+      frame_seq_num = str_to_int((const char *)frame.seq_buf, frame.seq_len);
 
-				// 동영상 프레임 크기 조정
-				resize(mat_recv, mat_recv, Size(cap_width, cap_height));
-
-				// 수신 큐(우선순위 큐) 에 삽입
-				// Mat 동적 할당함.
-				pair<long, void *> p = make_pair(frame_seq_num, new Mat(mat_recv));
-				recv_queue.push(p);
-			}
-		}
-	}
+      // push to recv_queue (for display output)
+      pair<long, Frame> p = make_pair(frame_seq_num, frame);
+      recv_queue.push(p);
+    }
+  }
+  final_exit_flag -= 1;
 }
 
 #define DONT_SHOW 0
-#define DONT_SHOW_THRESH 1
 #define SHOW_START 1
-#define SHOW_START_THRESH 3
+#define DONT_SHOW_THRESH 1
+#define SHOW_START_THRESH 0
 
 int volatile show_state = DONT_SHOW;
-long volatile show_frame = 1;
-long volatile show_fail_count = 0;
-#define SHOW_FAIL_THRESH 5
 void input_show_thread(void) {
-	cvNamedWindow("INPUT");
-	moveWindow("INPUT", 30, 130);
-	cv::imshow("INPUT", mat_show_input);
-	setMouseCallback("INPUT", onMouse, 0);
 
-	while (!exit_flag) {
+  if (!dont_show_flag) {
+    cvNamedWindow("INPUT");
+    moveWindow("INPUT", 30, 130);
+    cv::imshow("INPUT", mat_show_input);
+  }
 
-		switch (show_state) {
-		case DONT_SHOW:
-			break;
-		case SHOW_START:
-			if (cap_queue.size() >= DONT_SHOW_THRESH) {
-				mat_show_input = cap_queue.front().clone();
-				cap_queue.pop_front();
-			}
-			break;
-		}
+  final_exit_flag += 1;
+  while (!exit_flag) {
+    switch (show_state) {
+    case DONT_SHOW:
+      break;
+    case SHOW_START:
+      if (cap_queue.size() >= DONT_SHOW_THRESH) {
+        mat_show_input = cap_queue.front().clone();
+        cap_queue.pop_front();
+      }
+      break;
+    }
 
-		// INPUT (CAM VIDEO) 영상을 화면에 출력
-		putText(mat_show_input, "INPUT", Point(10, 25),
-			FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 255), 2);
+    if (!dont_show_flag) {
 
-		cv::imshow("INPUT", mat_show_input);
+      // draw text (INPUT) Left Upper corner  
+      putText(mat_show_input, "INPUT", Point(10, 25),
+        FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 255), 2);
 
-		// ESC 키를 입력하면 루프가 종료됩니다. 
-		if (waitKey(1) >= 0)
-			exit_flag = true;
+      cv::imshow("INPUT", mat_show_input);
 
-		// 잠깐 대기
-		std::chrono::duration<double, std::milli> timespan(delay);
-		std::this_thread::sleep_for(timespan);
-	}
+      // wait key for exit
+      if (waitKey(1) >= 0)
+        exit_flag = true;
+
+      // sleep delay
+      std::chrono::duration<double, std::milli> timespan(delay);
+      std::this_thread::sleep_for(timespan);
+    }
+  }
+  final_exit_flag -= 1;
 }
 
 void output_show_thread(void) {
-	cvNamedWindow("OUTPUT");
-	moveWindow("OUTPUT", 670, 130);
-	cv::imshow("OUTPUT", mat_show_output);
-	setMouseCallback("OUTPUT", onMouse, 0);
+  Frame frame;
 
-	while (!exit_flag) {
+  if (!dont_show_flag) {
+    cvNamedWindow("OUTPUT");
+    moveWindow("OUTPUT", 670, 130);
+    cv::imshow("OUTPUT", mat_show_output);
+  }
 
-		switch (show_state) {
-		case DONT_SHOW:
-			if (recv_queue.size() >= SHOW_START_THRESH) {
-				show_state = SHOW_START;
-			}
-			break;
-		case SHOW_START:
-			if (recv_queue.size() >= DONT_SHOW_THRESH) {
-				pair<long, void *> p;
-				// pop 성공
-				if (recv_queue.try_pop(p)) {
-					// 순서에 맞는 프레임인 경우 꺼내서 출력
-					if (p.first == show_frame) {
-						show_fail_count = 0;
-						//std::cout << "정상 프레임 " << show_frame << std::endl;
-						show_frame++;
-						mat_show_output = ((Mat *)p.second)->clone();
-						delete (Mat *)p.second;
-					}
-					// 아닌 경우
-					else {
-						// 늦게 도착한 경우 버림
-						if (p.first < show_frame) {
-							std::cout << "늦은 프레임 버림" << p.first << " wait : " << show_frame << std::endl;
-							show_fail_count = 0;
-							delete (Mat *)p.second;
-						}
-						// 먼저 도착한 경우 대기
-						else {
-							std::cout << "잘못된 프레임 : " << p.first << " wait : " << show_frame << std::endl;
-							if (show_fail_count > SHOW_FAIL_THRESH) {
-								show_fail_count = 0;
-								show_frame = p.first + 1;	//skip
-								mat_show_output = ((Mat *)p.second)->clone();
-								delete (Mat *)p.second;
-							}
-							else {
-								show_fail_count++;
-								recv_queue.push(p);
-							}
-						}
-					}
-				}
-			}
-			else {
-				show_state = DONT_SHOW;
-			}
-			break;
-		}
-		// OUTPUT 영상을 화면에 출력
-		putText(mat_show_output, "OUTPUT", Point(10, 25),
-			FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 255, 0), 2);
+  final_exit_flag += 1;
+  while (!exit_flag) {
 
-		cv::imshow("OUTPUT", mat_show_output);
+    switch (show_state) {
+    case DONT_SHOW:
+      if (recv_queue.size() >= SHOW_START_THRESH) {
+        show_state = SHOW_START;
+      }
+      break;
+    case SHOW_START:
+      if (recv_queue.size() >= DONT_SHOW_THRESH) {
+        pair<long, Frame> p;
+        // try pop success
+        if (recv_queue.try_pop(p)) {
+          // if right sequence
+          if (p.first == show_frame) {
 
-		// ESC 키를 입력하면 루프가 종료됩니다. 
-		if (waitKey(1) >= 0)
-			exit_flag = true;
+            frame = ((Frame)p.second);
+            vector<uchar> decode_buf((unsigned char*)(frame.msg_buf), (unsigned char*)(frame.msg_buf) + frame.msg_len);
 
-		// 잠깐 대기
-		std::chrono::duration<double, std::milli> timespan(delay);
-		std::this_thread::sleep_for(timespan);
+            // jpg to mat
+            mat_show_output = imdecode(decode_buf, IMREAD_COLOR);
 
-	}
-}
+            // resize
+            resize(mat_show_output, mat_recv, Size(cap_width, cap_height));
 
-static void onMouse(int event, int x, int y, int, void*)
-{
-	if (event == EVENT_LBUTTONDOWN) {
-		cout << "onMouse" << endl;
-		show_state = DONT_SHOW;
-	}
+            // wirte out_json
+            if (json_output_flag) {
+              if (show_frame != 1)
+                out_json_file << ",\n";
+              out_json_file.write((const char*)frame.det_buf, frame.det_len);
+            }
 
-	return;
+            // write out_vid
+            if (vid_output_flag)
+              writer.write(mat_show_output);
+
+            // free frame
+            frame_pool->free_frame(frame);
+            show_frame++;
+          }
+          // wrong sequence
+          else {
+            recv_queue.push(p);
+          }
+        }
+      }
+      else {
+        show_state = DONT_SHOW;
+      }
+      break;
+    }
+
+    if (show_frame == end_frame)
+      exit_flag = true;
+
+    if (!dont_show_flag) {
+      // draw text (OUTPUT) Left Upper corner  
+      putText(mat_show_output, "OUTPUT", Point(10, 25),
+        FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 255, 0), 2);
+
+      cv::imshow("OUTPUT", mat_show_output);
+
+      // wait key for exit
+      if (waitKey(1) >= 0)
+        exit_flag = true;
+
+      // sleep delay
+      std::chrono::duration<double, std::milli> timespan(delay);
+      std::this_thread::sleep_for(timespan);
+    }
+  }
+  final_exit_flag -= 1;
 }

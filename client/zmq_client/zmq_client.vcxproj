@@ -128,7 +128,20 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="args.cpp" />
+    <ClCompile Include="base64.cpp" />
+    <ClCompile Include="frame.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="mem_pool.cpp" />
+    <ClCompile Include="util.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="args.hpp" />
+    <ClInclude Include="base64.hpp" />
+    <ClInclude Include="frame.hpp" />
+    <ClInclude Include="mem_pool.hpp" />
+    <ClInclude Include="share_queue.hpp" />
+    <ClInclude Include="util.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

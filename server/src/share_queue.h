@@ -1,7 +1,6 @@
 #pragma once
-
 // https://stackoverflow.com/questions/36762248/why-is-stdqueue-not-thread-safe
-#include <queue>
+#include <deque>
 #include <mutex>
 #include <condition_variable>
 
