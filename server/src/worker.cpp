@@ -211,7 +211,6 @@ int main(int argc, char *argv[])
       // vector -> mat
       cv::Mat raw_mat = cv::imdecode(cv::Mat(raw_vec), 1);
 
-      // fight
       // mat -> image_t
       std::shared_ptr<image_t> raw_img = detector.mat_to_image(raw_mat);
 

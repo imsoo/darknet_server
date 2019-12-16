@@ -13,6 +13,8 @@
 #include "util.hpp"
 #include "args.hpp"
 
+#define FD_SETSIZE 4096
+
 using namespace cv;
 using namespace std;
 
@@ -120,7 +122,8 @@ int main(int argc, char *argv[])
   else if (cam_input_flag) {
     // VideoCapture cam
     cap = VideoCapture(cam_num);
-    cap.set(CV_CAP_PROP_FPS, 15);
+    cap.set(CAP_PROP_FPS, 20);
+    cap.set(CAP_PROP_BUFFERSIZE, 3);
     fetch_flag = true;
     out_json_path = "./cam_output.json";
     out_vid_path = "./cam_output.mp4";
@@ -138,7 +141,7 @@ int main(int argc, char *argv[])
 
   double fps = cap.get(CAP_PROP_FPS);
   end_frame = cap.get(CAP_PROP_FRAME_COUNT);
-  delay = (1000.0 / fps) / 4.0;
+  delay = cam_input_flag ? 1 : (1000.0 / fps);
 
   // read frame
   cap.read(mat_fetch);
@@ -188,7 +191,7 @@ int main(int argc, char *argv[])
   while (final_exit_flag)
   {
     // for debug
-    // cout << "R : " << recv_queue.size() << " | C : " << cap_queue.size() << " | F : " << fetch_queue.size() << " | T : " << end_frame << " : " << show_frame << endl;
+    cout << "R : " << recv_queue.size() << " | C : " << cap_queue.size() << " | F : " << fetch_queue.size() << " | T : " << end_frame << " : " << show_frame << endl;
   }
 
   cap.release();
@@ -251,7 +254,7 @@ void fetch_thread(void) {
 }
 
 void capture_thread(void) {
-  static vector<int> param = { IMWRITE_JPEG_QUALITY, 80 };
+  static vector<int> param = { IMWRITE_JPEG_QUALITY, 50 };
   static vector<uchar> encode_buf(JSON_BUF_LEN);
 
   volatile int frame_seq_num = 1;
@@ -332,8 +335,8 @@ void recv_thread(void) {
 
 #define DONT_SHOW 0
 #define SHOW_START 1
-#define DONT_SHOW_THRESH 1
-#define SHOW_START_THRESH 0
+#define DONT_SHOW_THRESH 2  // for buffering
+#define SHOW_START_THRESH 1 // for buffering
 
 int volatile show_state = DONT_SHOW;
 void input_show_thread(void) {
@@ -366,12 +369,8 @@ void input_show_thread(void) {
       cv::imshow("INPUT", mat_show_input);
 
       // wait key for exit
-      if (waitKey(1) >= 0)
+      if (waitKey(delay) >= 0)
         exit_flag = true;
-
-      // sleep delay
-      std::chrono::duration<double, std::milli> timespan(delay);
-      std::this_thread::sleep_for(timespan);
     }
   }
   final_exit_flag -= 1;
@@ -399,37 +398,40 @@ void output_show_thread(void) {
       if (recv_queue.size() >= DONT_SHOW_THRESH) {
         pair<long, Frame> p;
         // try pop success
-        if (recv_queue.try_pop(p)) {
-          // if right sequence
-          if (p.first == show_frame) {
+        while (1) {
+          if (recv_queue.try_pop(p)) {
+            // if right sequence
+            if (p.first == show_frame) {
 
-            frame = ((Frame)p.second);
-            vector<uchar> decode_buf((unsigned char*)(frame.msg_buf), (unsigned char*)(frame.msg_buf) + frame.msg_len);
+              frame = ((Frame)p.second);
+              vector<uchar> decode_buf((unsigned char*)(frame.msg_buf), (unsigned char*)(frame.msg_buf) + frame.msg_len);
 
-            // jpg to mat
-            mat_show_output = imdecode(decode_buf, IMREAD_COLOR);
+              // jpg to mat
+              mat_show_output = imdecode(decode_buf, IMREAD_COLOR);
 
-            // resize
-            resize(mat_show_output, mat_recv, Size(cap_width, cap_height));
+              // resize
+              resize(mat_show_output, mat_recv, Size(cap_width, cap_height));
 
-            // wirte out_json
-            if (json_output_flag) {
-              if (show_frame != 1)
-                out_json_file << ",\n";
-              out_json_file.write((const char*)frame.det_buf, frame.det_len);
+              // wirte out_json
+              if (json_output_flag) {
+                if (show_frame != 1)
+                  out_json_file << ",\n";
+                out_json_file.write((const char*)frame.det_buf, frame.det_len);
+              }
+
+              // write out_vid
+              if (vid_output_flag)
+                writer.write(mat_show_output);
+
+              // free frame
+              frame_pool->free_frame(frame);
+              show_frame++;
             }
-
-            // write out_vid
-            if (vid_output_flag)
-              writer.write(mat_show_output);
-
-            // free frame
-            frame_pool->free_frame(frame);
-            show_frame++;
-          }
-          // wrong sequence
-          else {
-            recv_queue.push(p);
+            // wrong sequence
+            else {
+              recv_queue.push(p);
+            }
+            break;
           }
         }
       }
@@ -450,12 +452,8 @@ void output_show_thread(void) {
       cv::imshow("OUTPUT", mat_show_output);
 
       // wait key for exit
-      if (waitKey(1) >= 0)
+      if (waitKey(delay) >= 0)
         exit_flag = true;
-
-      // sleep delay
-      std::chrono::duration<double, std::milli> timespan(delay);
-      std::this_thread::sleep_for(timespan);
     }
   }
   final_exit_flag -= 1;
