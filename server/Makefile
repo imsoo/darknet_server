@@ -1,4 +1,4 @@
-DEBUG = 0
+DEBUG = 1
 
 CPP = g++
 COMMON = -DOPENCV
@@ -24,7 +24,7 @@ EXEC1_OBJ = ventilator.o frame.o mem_pool.o base64.o
 EXEC1_OBJS = $(addprefix $(OBJDIR), $(EXEC1_OBJ))
 
 EXEC2 = worker
-EXEC2_OBJ = worker.o frame.o mem_pool.o base64.o args.o
+EXEC2_OBJ = worker.o yolo_detector.o pose_detector.o people.o frame.o mem_pool.o base64.o args.o
 EXEC2_OBJS = $(addprefix $(OBJDIR), $(EXEC2_OBJ))
 
 EXEC3 = sink
@@ -33,7 +33,7 @@ EXEC3_OBJS = $(addprefix $(OBJDIR), $(EXEC3_OBJ))
 
 OBJS = $(EXEC1_OBJS) $(EXEC2_OBJS) $(EXEC3_OBJS)
 EXECS = $(EXEC1) $(EXEC2) $(EXEC3)
-INPROCS = processed unprocessed
+INPROCS = processed unprocessed action
 
 all: $(OBJDIR) $(EXECS)
 

@@ -70,7 +70,6 @@ extern "C" LIB_API void send_json_custom(char const* send_buf, int port, int tim
 class Detector {
     std::shared_ptr<void> detector_gpu_ptr;
     std::deque<std::vector<bbox_t>> prev_bbox_vec_deque;
-    std::string _cfg_filename, _weight_filename;
 public:
     const int cur_gpu_id;
     float nms = .4;
@@ -85,7 +84,10 @@ public:
     static LIB_API void free_image(image_t m);
     LIB_API int get_net_width() const;
     LIB_API int get_net_height() const;
+    LIB_API int get_net_out_width() const;
+    LIB_API int get_net_out_height() const;
     LIB_API int get_net_color_depth() const;
+    LIB_API float *predict(float *input) const;
 
     LIB_API std::vector<bbox_t> tracking_id(std::vector<bbox_t> cur_bbox_vec, bool const change_history = true,
                                                 int const frames_story = 5, int const max_dist = 40);
