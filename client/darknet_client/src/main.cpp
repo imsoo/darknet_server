@@ -6,15 +6,24 @@
 #include <thread>
 #include <string>
 #include <sstream>
+#include <csignal>
+#ifdef __linux__
+#include <tbb/concurrent_priority_queue.h>
+#elif _WIN32
 #include <concurrent_priority_queue.h>
+#endif
 #include <opencv2/opencv.hpp>
 #include "share_queue.hpp"
 #include "frame.hpp"
 #include "util.hpp"
 #include "args.hpp"
 
+#ifdef __linux__
 #define FD_SETSIZE 4096
-
+using namespace tbb;
+#elif _WIN32
+using namespace concurrency;
+#endif
 using namespace cv;
 using namespace std;
 
@@ -43,7 +52,7 @@ public:
   }
 };
 Frame_pool *frame_pool;
-concurrency::concurrent_priority_queue<pair<long, Frame>, ComparePair> recv_queue;
+concurrent_priority_queue<pair<long, Frame>, ComparePair> recv_queue;
 
 // Queue
 SharedQueue<Mat> cap_queue;
@@ -77,12 +86,20 @@ string out_vid_path;
 
 ofstream out_json_file;
 
+void sig_handler(int s)
+{
+  exit_flag = true;
+}
+
 int main(int argc, char *argv[])
 {
   if (argc < 2) {
     std::cerr << "Usage: " << argv[0] << " <-addr ADDR> <-cam CAM_NUM | -vid VIDEO_PATH> [-dont_show] [-out_json] [-out_vid] \n" << std::endl;
     return 0;
   }
+
+  // install signal
+  std::signal(SIGINT, sig_handler);
 
   // option init
   int cam_num = find_int_arg(argc, argv, "-cam", -1);
@@ -395,7 +412,7 @@ void output_show_thread(void) {
       }
       break;
     case SHOW_START:
-      if (recv_queue.size() >= DONT_SHOW_THRESH) {
+      if (recv_queue.size() >= DONT_SHOW_THRESH || (end_frame - show_frame) == 1) {
         pair<long, Frame> p;
         // try pop success
         while (1) {

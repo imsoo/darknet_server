@@ -18,12 +18,28 @@
       <Platform>x64</Platform>
     </ProjectConfiguration>
   </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\args.cpp" />
+    <ClCompile Include="src\base64.cpp" />
+    <ClCompile Include="src\frame.cpp" />
+    <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\mem_pool.cpp" />
+    <ClCompile Include="src\util.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\args.hpp" />
+    <ClInclude Include="src\base64.hpp" />
+    <ClInclude Include="src\frame.hpp" />
+    <ClInclude Include="src\mem_pool.hpp" />
+    <ClInclude Include="src\share_queue.hpp" />
+    <ClInclude Include="src\util.hpp" />
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>15.0</VCProjectVersion>
     <ProjectGuid>{D8EF8C1B-C4C1-4C68-A033-31AD741BE59A}</ProjectGuid>
-    <RootNamespace>zmqclient</RootNamespace>
+    <RootNamespace>darknetclient</RootNamespace>
     <WindowsTargetPlatformVersion>10.0.17763.0</WindowsTargetPlatformVersion>
-    <ProjectName>zmq_client</ProjectName>
+    <ProjectName>darknet_client</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -127,22 +143,6 @@
       <AdditionalLibraryDirectories>C:\opencv\build\x64\vc15\lib;</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
-  <ItemGroup>
-    <ClCompile Include="args.cpp" />
-    <ClCompile Include="base64.cpp" />
-    <ClCompile Include="frame.cpp" />
-    <ClCompile Include="main.cpp" />
-    <ClCompile Include="mem_pool.cpp" />
-    <ClCompile Include="util.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="args.hpp" />
-    <ClInclude Include="base64.hpp" />
-    <ClInclude Include="frame.hpp" />
-    <ClInclude Include="mem_pool.hpp" />
-    <ClInclude Include="share_queue.hpp" />
-    <ClInclude Include="util.hpp" />
-  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

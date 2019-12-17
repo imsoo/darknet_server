@@ -15,42 +15,42 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="main.cpp">
+    <ClCompile Include="src\args.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
-    <ClCompile Include="base64.cpp">
+    <ClCompile Include="src\base64.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
-    <ClCompile Include="frame.cpp">
+    <ClCompile Include="src\frame.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
-    <ClCompile Include="util.cpp">
+    <ClCompile Include="src\main.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
-    <ClCompile Include="args.cpp">
+    <ClCompile Include="src\mem_pool.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
-    <ClCompile Include="mem_pool.cpp">
+    <ClCompile Include="src\util.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="frame.hpp">
+    <ClInclude Include="src\args.hpp">
       <Filter>헤더 파일</Filter>
     </ClInclude>
-    <ClInclude Include="util.hpp">
+    <ClInclude Include="src\base64.hpp">
       <Filter>헤더 파일</Filter>
     </ClInclude>
-    <ClInclude Include="share_queue.hpp">
+    <ClInclude Include="src\frame.hpp">
       <Filter>헤더 파일</Filter>
     </ClInclude>
-    <ClInclude Include="args.hpp">
+    <ClInclude Include="src\mem_pool.hpp">
       <Filter>헤더 파일</Filter>
     </ClInclude>
-    <ClInclude Include="base64.hpp">
+    <ClInclude Include="src\share_queue.hpp">
       <Filter>헤더 파일</Filter>
     </ClInclude>
-    <ClInclude Include="mem_pool.hpp">
+    <ClInclude Include="src\util.hpp">
       <Filter>헤더 파일</Filter>
     </ClInclude>
   </ItemGroup>
