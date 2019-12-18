@@ -5,6 +5,7 @@
 #include <chrono>
 #include <assert.h>
 #include <pthread.h>
+#include <csignal>
 #include "share_queue.h"
 #include "frame.hpp"
 #include "args.hpp"
@@ -25,13 +26,20 @@ SharedQueue<Frame> processed_frame_queue;;
 // pool
 Frame_pool *frame_pool;
 
+// signal
+volatile bool exit_flag = false;
+void sig_handler(int s)
+{
+  exit_flag = true;
+}
+
 void *recv_in_thread(void *ptr)
 {
   int recv_json_len;
   unsigned char json_buf[JSON_BUF_LEN];
   Frame frame;
 
-  while(1) {
+  while(!exit_flag) {
     recv_json_len = zmq_recv(sock_pull, json_buf, JSON_BUF_LEN, ZMQ_NOBLOCK);
 
     if (recv_json_len > 0) {
@@ -54,7 +62,7 @@ void *send_in_thread(void *ptr)
   unsigned char json_buf[JSON_BUF_LEN];
   Frame frame;
 
-  while(1) {
+  while(!exit_flag) {
     if (processed_frame_queue.size() > 0) {
       frame = processed_frame_queue.front();
       processed_frame_queue.pop_front();
@@ -77,6 +85,9 @@ int main(int argc, char *argv[])
     fprintf(stderr, "usage: %s <cfg> <weights> <names> [-pose] [-gpu GPU_ID] [-thresh THRESH]\n", argv[0]);
     return 0;
   }
+
+  // signal
+  std::signal(SIGINT, sig_handler);
 
   const char *cfg_path = argv[1];
   const char *weights_path = argv[2];
@@ -138,7 +149,7 @@ int main(int argc, char *argv[])
   auto time_end = std::chrono::steady_clock::now();
   double det_time;
 
-  while(1) {
+  while(!exit_flag) {
     // recv from ven
     if (unprocessed_frame_queue.size() > 0) {
       frame = unprocessed_frame_queue.front();

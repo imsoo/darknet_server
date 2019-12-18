@@ -440,6 +440,7 @@ Mat PoseDetector::create_netsize_im
 
 PoseDetector::PoseDetector(const char *cfg_path, const char *weight_path, int gpu_id) : Detector(cfg_path, weight_path,
 gpu_id) {
+  det_people = nullptr;
   // initialize net
   net_inw = get_net_width();
   net_inh = get_net_height();

@@ -1,6 +1,7 @@
 #include <zmq.h>
 #include <iostream>
 #include <cassert>
+#include <csignal>
 #include <pthread.h>
 #include "share_queue.h"
 #include "frame.hpp"
@@ -15,13 +16,20 @@ SharedQueue<Frame> frame_queue;
 // pool
 Frame_pool *frame_pool;
 
+// signal
+volatile bool exit_flag = false;
+void sig_handler(int s)
+{
+  exit_flag = true;
+}
+
 void *recv_in_thread(void *ptr)
 {
   int recv_json_len;
   unsigned char json_buf[JSON_BUF_LEN];
   Frame frame;
 
-  while(1) {
+  while(!exit_flag) {
     recv_json_len = zmq_recv(sock_pull, json_buf, JSON_BUF_LEN, ZMQ_NOBLOCK);
 
     if (recv_json_len > 0) {
@@ -42,7 +50,7 @@ void *send_in_thread(void *ptr)
   int send_json_len;
   unsigned char json_buf[JSON_BUF_LEN];
   Frame frame;
-  while(1) {
+  while(!exit_flag) {
     if (frame_queue.size() > 0) {
       frame = frame_queue.front();
       frame_queue.pop_front();
@@ -61,6 +69,8 @@ void *send_in_thread(void *ptr)
 }
 int main()
 {
+  // signal
+  std::signal(SIGINT, sig_handler);
   // ZMQ
   int ret;
   void *context = zmq_ctx_new(); 
@@ -87,7 +97,7 @@ int main()
   pthread_detach(send_thread);
   pthread_detach(recv_thread);
 
-  while(1);
+  while(!exit_flag);
 
   delete frame_pool;
   zmq_close(sock_pull);

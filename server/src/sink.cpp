@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <iostream>
 #include <string>
+#include <csignal>
 #include <assert.h>
 #include <tbb/concurrent_hash_map.h>
 #include <opencv2/opencv.hpp>
@@ -19,13 +20,20 @@ SharedQueue<Frame> processed_frame_queue;
 // pool
 Frame_pool *frame_pool;
 
+// signal
+volatile bool exit_flag = false;
+void sig_handler(int s)
+{
+  exit_flag = true;
+}
+
 void *recv_in_thread(void *ptr)
 {
   int recv_json_len;
   unsigned char json_buf[JSON_BUF_LEN];
   Frame frame;
 
-  while(1) {
+  while(!exit_flag) {
     recv_json_len = zmq_recv(sock_pull, json_buf, JSON_BUF_LEN, ZMQ_NOBLOCK);
 
     if (recv_json_len > 0) {
@@ -54,7 +62,7 @@ void *send_in_thread(void *ptr)
   unsigned char json_buf[JSON_BUF_LEN];
   Frame frame;
 
-  while(1) {
+  while(!exit_flag) {
     if (processed_frame_queue.size() > 0) {
       frame = processed_frame_queue.front();
       processed_frame_queue.pop_front();
@@ -106,7 +114,7 @@ int main()
   Frame frame;
   volatile int track_frame = 1;
   
-  while(1) {
+  while(!exit_flag) {
     if (!frame_map.empty()) {
       tbb::concurrent_hash_map<int, Frame>::accessor c_a;
 
