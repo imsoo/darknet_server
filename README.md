@@ -29,7 +29,12 @@ In this project, Server and client communicate based on **ZeroMQ** message libra
 * `yolov3.cfg` (236 MB COCO **Yolo v3**) - requires 4 GB GPU-RAM: https://pjreddie.com/media/files/yolov3.weights
 * `yolov3-tiny.cfg` (34 MB COCO **Yolo v3 tiny**) - requires 1 GB GPU-RAM:  https://pjreddie.com/media/files/yolov3-tiny.weights
 * `openpose.cfg` (200 MB **OpenPose**) - requires 4 GB GPU-RAM: https://github.com/lincolnhard/openpose-darknet
+* `fight.cfg` (235 MB **Yolo v3 custom train**) - requires 4 GB GPU-RAM: https://drive.google.com/open?id=1wqLMNwWGdkxPiFpeXJSLfnKZp8ZD99PS
 
+* #### Examples of results (fight)
+
+|<img src="https://user-images.githubusercontent.com/11255376/71348509-06655f00-25b0-11ea-9351-2be699084517.gif" width="150%" height="30%">|<img src="https://user-images.githubusercontent.com/11255376/71348563-272db480-25b0-11ea-8530-67fff677f551.gif" width="150%" height="30%">|
+|:---:|:---:|
 
 ### How to Build 
 * #### Server (Linux)
